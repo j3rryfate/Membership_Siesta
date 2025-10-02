@@ -5,12 +5,12 @@ from pyrogram.types import Message
 from bot import CMD
 from bot.settings import bot_set
 from bot.logger import LOGGER
-from ..helpers.message import send_message, fetch_user_details, edit_message
+from ..helpers.message import send_message, edit_message
 from ..helpers.database.pg_impl import user_db
 import bot.helpers.translations as lang
 
 # Admin Check Filter
-admin_only = filters.user(bot_set.admins)
+admin_only = filters.user(bot_set.admins) & filters.private # Admin တွေကို private chat ကနေသာ ခိုင်းစေခွင့်ပြု
 
 @Client.on_message(filters.command("approve") & admin_only)
 async def approve_handler(bot: Client, update: Message):
@@ -59,11 +59,15 @@ async def pending_handler(bot: Client, update: Message):
     text = f"**Pending Approvals: {len(pendings)} requests**\n\n"
     
     for i, p in enumerate(pendings, 1):
+        # Telegram Message Link ကို ပြန်လည်တည်ဆောက်ခြင်း
+        # Private Chat ID ကို Link အတွက် ပြင်ဆင်
+        chat_id_for_link = str(p['proof_chat_id']).replace('-100', '')
+        
         text += (
-            f"**{i}. User:** [{p['username']}](tg://user?id={p['user_id']})\n"
+            f"**{i}. User:** [{p['username'] if p['username'] else p['user_id']}](tg://user?id={p['user_id']})\n"
             f"**ID:** `{p['user_id']}`\n"
             f"**Submitted:** {p['submitted_at'].strftime('%Y-%m-%d %H:%M')}\n"
-            f"**Proof:** [Message Link](https://t.me/c/{str(p['proof_chat_id'])[4:]}/{p['proof_message_id']})\n"
+            f"**Proof:** [Message Link](https://t.me/c/{chat_id_for_link}/{p['proof_message_id']})\n"
             f"**Command:** `/approve {p['user_id']} 30`\n\n"
         )
 
@@ -111,6 +115,10 @@ async def broadcast_handler(bot: Client, update: Message):
 
     for user_id in users:
         try:
+            # Admin တွေကို မပို့တော့ပါ
+            if user_id in bot_set.admins:
+                continue
+                
             await update.reply_to_message.copy(user_id)
             sent_count += 1
             await asyncio.sleep(0.1) # FloodWait ကို ရှောင်ရှားရန်
@@ -123,7 +131,7 @@ async def broadcast_handler(bot: Client, update: Message):
         
     final_msg = (
         f"**Broadcast Completed!**\n"
-        f"**Total Users:** {len(users)}\n"
+        f"**Total Users (including non-members):** {len(users)}\n"
         f"**Sent:** {sent_count}\n"
         f"**Failed (Blocked/Error):** {failed_count}"
     )
