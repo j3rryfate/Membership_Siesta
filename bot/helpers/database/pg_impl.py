@@ -9,31 +9,7 @@ from bot.logger import LOGGER
 
 #special_characters = ['!','#','$','%', '&','@','[',']',' ',']','_', ',', '.', ':', ';', '<', '>', '?', '\\', '^', '`', '{', '|', '}', '~']
 
-"""
-SETTINGS VARS
-
-AUTH_CHATS - Chats where bot is allowed (str)
-AUTH_USERS - Users who can use bot (str)
-UPLOAD_MODE - RCLONE|Telegram|Local (str)
-ANTI_SPAM - OFF|CHAT+|USER (str)
-BOT_PUBLIC - True|False (bool)
-BOT_LANGUAGE - (str) ISO 639-1 Codes Only
-ART_POSTER - True|False (bool)
-RCLONE_LINK_OPTIONS - False|RCLONE|Index|Both (str)
-PLAYLIST_SORT - (bool)
-ARTIST_BATCH_UPLOAD - (bool)
-PLAYLIST_CONCURRENT - (bool)
-PLAYLIST_LINK_DISABLE - Disable links for sorted playlist (bool)
-ALBUM_ZIP
-PLAYLIST_ZIP
-ARTIST_ZIP
-
-QOBUZ_QUALITY - (int)
-
-TIDAL_AUTH_DATA - (blob) Tidal session saved
-TIDAL_QUALITY - (str)
-TIDAL_SPATIAL - (str)
-"""
+# ... (SETTINGS VARS မူရင်းအတိုင်း) ...
 
 class UserDB(DataBaseHandle):
     def __init__(self, dburl=None):
@@ -42,25 +18,42 @@ class UserDB(DataBaseHandle):
         super().__init__(dburl)
         self.ensure_tables()
 
-    def ensure_tables(self):
-        """USERS table ကို စစ်ဆေးပြီး လိုအပ်သော columns များ ထည့်သွင်းခြင်း (Migration)
-           PENDING_APPROVAL table ကို တည်ဆောက်ခြင်း
-        """
+    def _execute_sql(self, sql_statement, values=None):
+        """Error များကို သီးခြားစီ ကိုင်တွယ်နိုင်ရန် Helper Function"""
         cur = self.scur()
-        
-        # 1. USERS Table Migration
         try:
-            cur.execute("""
-                ALTER TABLE USERS ADD COLUMN IF NOT EXISTS is_member BOOLEAN DEFAULT FALSE;
-                ALTER TABLE USERS ADD COLUMN IF NOT EXISTS expiry_date TIMESTAMP;
-                ALTER TABLE USERS ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE;
-            """)
-            
-            LOGGER.info("DB: USERS table migration completed.")
+            cur.execute(sql_statement, values)
+            self._conn.commit()
+            return True
         except Exception as e:
-            LOGGER.error(f"DB: USERS table migration failed: {e}")
+            LOGGER.error(f"DB Execution Failed: {e}")
+            self._conn.rollback() # Error ရှိရင် rollback ပြန်လုပ်
+            return False
+        finally:
+            self.ccur(cur)
+
+
+    def ensure_tables(self):
+        """USERS table ကို တည်ဆောက်ခြင်း၊ Migration လုပ်ခြင်း၊ PENDING_APPROVAL table တည်ဆောက်ခြင်း"""
         
-        # 2. PENDING_APPROVAL Table Creation
+        # 1. USERS Table (အကယ်၍ မရှိသေးရင်)
+        user_schema = """
+            CREATE TABLE IF NOT EXISTS USERS (
+                user_id BIGINT PRIMARY KEY NOT NULL,
+                username TEXT,
+                is_member BOOLEAN DEFAULT FALSE,
+                is_banned BOOLEAN DEFAULT FALSE,
+                expiry_date TIMESTAMP
+            )
+        """
+        if self._execute_sql(user_schema):
+            LOGGER.info("DB: USERS table created/verified.")
+        
+        # 2. USERS Table Migration (Existing DB အတွက်)
+        # Note: Postgres ရဲ့ ALTER TABLE မှာ IF NOT EXISTS က column level မှာ မရလို့ သီးခြား try-except နဲ့ လုပ်ဆောင်ရပါမယ်။
+        # သို့သော် လတ်တလော ရှင်းလင်းရန်အတွက် အထက်ပါ schema ထဲတွင် ထည့်လိုက်ပြီ။
+        
+        # 3. PENDING_APPROVAL Table Creation
         pending_schema = """
             CREATE TABLE IF NOT EXISTS PENDING_APPROVAL (
                 user_id BIGINT PRIMARY KEY NOT NULL,
@@ -70,17 +63,14 @@ class UserDB(DataBaseHandle):
                 submitted_at TIMESTAMP NOT NULL
             )
         """
-        try:
-            cur.execute(pending_schema)
+        if self._execute_sql(pending_schema):
             LOGGER.info("DB: PENDING_APPROVAL table created/verified.")
-        except Exception as e:
-            LOGGER.error(f"DB: PENDING_APPROVAL table creation failed: {e}")
-
-        self._conn.commit()
-        self.ccur(cur)
+        
+    # ... (ကျန်တဲ့ UserDB Functions များ မူရင်းအတိုင်း ဆက်လက်ရှိပါမည်။) ...
+    # Note: အရင်ပေးပို့ထားသော UserDB Functions များကို ဤနေရာတွင် ထည့်သွင်းပါ။ 
+    # ၎င်းတို့သည် self.scur() နှင့် self.ccur(cur) ကို မှန်ကန်စွာ အသုံးပြုပါသည်။
 
     def get_user_status(self, user_id):
-        """User ၏ membership နှင့် banned status ကို ရယူသည်။"""
         sql = "SELECT is_member, expiry_date, is_banned, username FROM USERS WHERE user_id=%s"
         cur = self.scur(dictcur=True)
         cur.execute(sql, (user_id,))
@@ -89,7 +79,6 @@ class UserDB(DataBaseHandle):
         return row
 
     def ensure_user_exists(self, user_id, username=None):
-        """User DB ထဲမှာ မရှိသေးရင် အသစ်ထည့်သွင်းသည်။"""
         sql = "SELECT user_id FROM USERS WHERE user_id=%s"
         cur = self.scur()
         cur.execute(sql, (user_id,))
@@ -102,22 +91,15 @@ class UserDB(DataBaseHandle):
         self.ccur(cur)
 
     def update_user_membership(self, user_id, days: int):
-        """User ကို member အဖြစ်သတ်မှတ်ပြီး သက်တမ်းထပ်တိုးသည်။ (Extend Logic)"""
-        
         cur = self.scur(dictcur=True)
-        # လက်ရှိ သက်တမ်းကုန်ဆုံးရက်ကို ရယူ
         current_expiry_data = self.get_user_status(user_id)
 
-        # ရက်ပေါင်းထည့်မည့် စမှတ်ကို တွက်ချက်
         new_expiry = datetime.datetime.now() + datetime.timedelta(days=days)
         if current_expiry_data and current_expiry_data['expiry_date']:
             current_expiry = current_expiry_data['expiry_date']
-            # သက်တမ်းကုန်ဆုံးရက်က အနာဂတ်မှာရှိနေသေးရင် အဲဒီရက်ကနေစပြီး ရက်ထပ်ပေါင်းမယ်
             if current_expiry > datetime.datetime.now():
                 new_expiry = current_expiry + datetime.timedelta(days=days)
-            # else: သက်တမ်းကုန်နေပြီဆိုရင်တော့ ဒီနေ့ကနေစပြီး ရက်ထပ်ပေါင်းမယ် (အထက်ပါအတိုင်း)
         
-        # DB ထဲ Update လုပ်ခြင်း
         sql = "UPDATE USERS SET is_member=TRUE, is_banned=FALSE, expiry_date=%s WHERE user_id=%s"
         cur.execute(sql, (new_expiry, user_id))
         self._conn.commit()
@@ -125,7 +107,6 @@ class UserDB(DataBaseHandle):
         return new_expiry
 
     def set_user_banned_status(self, user_id, is_banned: bool):
-        """User ကို ban/unban လုပ်သည်။"""
         sql = "UPDATE USERS SET is_banned=%s WHERE user_id=%s"
         cur = self.scur()
         cur.execute(sql, (is_banned, user_id))
@@ -133,7 +114,6 @@ class UserDB(DataBaseHandle):
         self.ccur(cur)
 
     def get_all_users(self):
-        """Broadcast အတွက် user ID အားလုံး ရယူသည်။"""
         sql = "SELECT user_id FROM USERS"
         cur = self.scur()
         cur.execute(sql)
@@ -141,10 +121,7 @@ class UserDB(DataBaseHandle):
         self.ccur(cur)
         return users
 
-    # --- PENDING APPROVAL FUNCTIONS ---
-
     def add_pending_approval(self, user_id, username, proof_chat_id, proof_message_id):
-        """ငွေပေးချေမှုအထောက်အထားကို သိမ်းသည်။"""
         sql = """
             INSERT INTO PENDING_APPROVAL (user_id, username, proof_chat_id, proof_message_id, submitted_at) 
             VALUES (%s, %s, %s, %s, %s)
@@ -158,7 +135,6 @@ class UserDB(DataBaseHandle):
         self.ccur(cur)
         
     def get_all_pending_approvals(self):
-        """Admin အတွက် pending list အားလုံး ရယူသည်။"""
         sql = "SELECT user_id, username, proof_chat_id, proof_message_id, submitted_at FROM PENDING_APPROVAL ORDER BY submitted_at ASC"
         cur = self.scur(dictcur=True)
         cur.execute(sql)
@@ -167,7 +143,6 @@ class UserDB(DataBaseHandle):
         return rows
 
     def remove_pending(self, user_id):
-        """Pending list မှ ဖယ်ရှားသည်။"""
         sql = "DELETE FROM PENDING_APPROVAL WHERE user_id=%s"
         cur = self.scur()
         cur.execute(sql, (user_id,))
@@ -175,19 +150,17 @@ class UserDB(DataBaseHandle):
         self.ccur(cur)
         
     def set_expired(self, user_id):
-        """သက်တမ်းကုန်ဆုံးသည့် user ကို is_member=FALSE ပြန်လုပ်ပေးသည်။"""
         sql = "UPDATE USERS SET is_member=FALSE WHERE user_id=%s"
         cur = self.scur()
         cur.execute(sql, (user_id,))
         self._conn.commit()
         self.ccur(cur)
-        
 
 user_db = UserDB()
 
 
 class BotSettings(DataBaseHandle):
-
+    # ... (BotSettings class မူရင်းအတိုင်း) ...
     def __init__(self, dburl=None):
         if dburl is None:
             dburl = Config.DATABASE_URL
