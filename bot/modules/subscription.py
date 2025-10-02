@@ -6,7 +6,7 @@ from ..helpers.message import send_message, fetch_user_details
 from ..helpers.database.pg_impl import user_db
 import bot.helpers.translations as lang
 
-@Client.on_message(filters.command("subscription"))
+@Client.on_message(filters.command("subscription") & filters.private)
 async def subscription_handler(bot: Client, update: Message):
     user = await fetch_user_details(update)
     
@@ -27,10 +27,10 @@ async def subscription_handler(bot: Client, update: Message):
     # 2. ငွေပေးချေမှုအထောက်အထားကို သိမ်းဆည်း
     proof_msg = update.reply_to_message
     
-    # proof ရဲ့ file_id (ပုံ) နဲ့ message ID ကို သိမ်းဆည်း
+    # proof ရဲ့ message ID ကို သိမ်းဆည်း
     user_db.add_pending_approval(
         user_id=user['user_id'],
-        username=user['user_name'],
+        username=update.from_user.username,
         proof_chat_id=proof_msg.chat.id,
         proof_message_id=proof_msg.id
     )
@@ -68,5 +68,4 @@ async def subscription_handler(bot: Client, update: Message):
                 disable_web_page_preview=True
             )
         except Exception as e:
-            # admin ကို စာပို့မရရင် ignore
             pass
