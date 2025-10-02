@@ -9,8 +9,8 @@ from ..helpers.message import send_message, edit_message
 from ..helpers.database.pg_impl import user_db
 import bot.helpers.translations as lang
 
-# Admin Check Filter
-admin_only = filters.user(bot_set.admins) & filters.private # Admin တွေကို private chat ကနေသာ ခိုင်းစေခွင့်ပြု
+# Admin Check Filter: set ကို list အဖြစ်ပြောင်း
+admin_only = filters.user(list(bot_set.admins)) & filters.private 
 
 @Client.on_message(filters.command("approve") & admin_only)
 async def approve_handler(bot: Client, update: Message):
@@ -59,8 +59,6 @@ async def pending_handler(bot: Client, update: Message):
     text = f"**Pending Approvals: {len(pendings)} requests**\n\n"
     
     for i, p in enumerate(pendings, 1):
-        # Telegram Message Link ကို ပြန်လည်တည်ဆောက်ခြင်း
-        # Private Chat ID ကို Link အတွက် ပြင်ဆင်
         chat_id_for_link = str(p['proof_chat_id']).replace('-100', '')
         
         text += (
@@ -124,7 +122,7 @@ async def broadcast_handler(bot: Client, update: Message):
             await asyncio.sleep(0.1) # FloodWait ကို ရှောင်ရှားရန်
         except Exception as e:
             if "blocked" in str(e).lower():
-                 pass # Block လုပ်ထားရင် ဖျောက်
+                 pass
             else:
                  LOGGER.error(f"Broadcast failed for {user_id}: {e}")
                  failed_count += 1
