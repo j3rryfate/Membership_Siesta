@@ -7,14 +7,12 @@ from pyrogram.errors import MessageNotModified, FloodWait
 from bot.tgclient import aio
 from bot.settings import bot_set
 from bot.logger import LOGGER
-
-# pg_impl.py မှ user_db ကို ထည့်သွင်း
 from .database.pg_impl import user_db 
+
 
 current_user = []
 
 user_details = {
-# ... (မူရင်း code) ...
     'user_id': None,
     'name': None, # Name of the user 
     'user_name': None, # Username of the user
@@ -28,7 +26,6 @@ user_details = {
 
 
 async def fetch_user_details(msg: Message, reply=False) -> dict:
-# ... (မူရင်း code) ...
     """
     args:
         msg - pyrogram Message()
@@ -62,8 +59,9 @@ async def check_user(uid=None, msg=None, restricted=False) -> bool:
         False - Cannot Access (Membership/Ban Check ပါဝင်)
     """
     
-    # 1. Admin Check (Subscription ကနေ လုံးဝ ချန်လှပ်)
     user_id = uid if uid else msg.from_user.id
+    
+    # 1. Admin Check (Subscription/Ban ကနေ လုံးဝ ချန်လှပ်)
     if user_id in bot_set.admins:
         return True
     
@@ -85,7 +83,7 @@ async def check_user(uid=None, msg=None, restricted=False) -> bool:
 
     # 3. Public/Auth Chat Check (မူရင်း logic)
     if bot_set.bot_public:
-        # BOT_PUBLIC ဖြစ်ရင် membership စစ်ဆေးရန်မလိုပဲ True
+        # BOT_PUBLIC ဖြစ်ရင် membership စစ်ဆေးရန်မလို
         return True
     else:
         all_chats = bot_set.auth_chats + bot_set.auth_users 
@@ -96,7 +94,7 @@ async def check_user(uid=None, msg=None, restricted=False) -> bool:
         
     # 4. Membership Check (Auth/Public မဟုတ်ရင် Member ဖြစ်ဖို့လိုသည်)
     if status and status['is_member']:
-        # is_member က True ဆိုရင် သက်တမ်းကုန်မကုန် စစ်ဆေးရန်မလိုဘဲ True (Background Task က လုပ်ပြီးသားမို့)
+        # is_member က True ဆိုရင် OK
         return True
     elif msg:
         # Member လည်း မဟုတ်၊ Auth/Public မှာလည်း မပါရင်၊ Membership လိုကြောင်း ပြောပါ
@@ -108,14 +106,8 @@ async def check_user(uid=None, msg=None, restricted=False) -> bool:
 
     return False
 
-# ... (ကျန်တဲ့ Functions များ မပြောင်းလဲပါ) ...
-
-# ------------------------------------
-# မူရင်း message.py code ကို ဆက်လက်ထည့်သွင်းပါ
-# ------------------------------------
 
 async def antiSpam(uid=None, cid=None, revoke=False) -> bool:
-# ... (မူရင်း antiSpam code) ...
     """
     Checks if user/chat in waiting mode(anti spam)
     Args
@@ -225,4 +217,3 @@ async def edit_message(msg:Message, text, markup=None, antiflood=True):
             return await edit_message(msg, text, markup, antiflood)
         else:
             return None
-# ------------------------------------
