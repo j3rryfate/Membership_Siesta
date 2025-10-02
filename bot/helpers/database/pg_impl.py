@@ -5,9 +5,36 @@ from .pg_db import DataBaseHandle
 import json
 
 from config import Config
-from bot.logger import LOGGER # logger ကို ထည့်သွင်း
+from bot.logger import LOGGER
 
-# (BotSettings class အထက်)
+#special_characters = ['!','#','$','%', '&','@','[',']',' ',']','_', ',', '.', ':', ';', '<', '>', '?', '\\', '^', '`', '{', '|', '}', '~']
+
+"""
+SETTINGS VARS
+
+AUTH_CHATS - Chats where bot is allowed (str)
+AUTH_USERS - Users who can use bot (str)
+UPLOAD_MODE - RCLONE|Telegram|Local (str)
+ANTI_SPAM - OFF|CHAT+|USER (str)
+BOT_PUBLIC - True|False (bool)
+BOT_LANGUAGE - (str) ISO 639-1 Codes Only
+ART_POSTER - True|False (bool)
+RCLONE_LINK_OPTIONS - False|RCLONE|Index|Both (str)
+PLAYLIST_SORT - (bool)
+ARTIST_BATCH_UPLOAD - (bool)
+PLAYLIST_CONCURRENT - (bool)
+PLAYLIST_LINK_DISABLE - Disable links for sorted playlist (bool)
+ALBUM_ZIP
+PLAYLIST_ZIP
+ARTIST_ZIP
+
+QOBUZ_QUALITY - (int)
+
+TIDAL_AUTH_DATA - (blob) Tidal session saved
+TIDAL_QUALITY - (str)
+TIDAL_SPATIAL - (str)
+"""
+
 class UserDB(DataBaseHandle):
     def __init__(self, dburl=None):
         if dburl is None:
@@ -22,8 +49,6 @@ class UserDB(DataBaseHandle):
         cur = self.scur()
         
         # 1. USERS Table Migration
-        # Note: USERS table သည် ပုံမှန်အားဖြင့် အခြားနေရာတွင် တည်ဆောက်ထားပြီးဖြစ်သည်ဟု ယူဆသည်။
-        # ဤနေရာတွင် လိုအပ်သော columns များကိုသာ ထပ်ထည့်သည်။
         try:
             cur.execute("""
                 ALTER TABLE USERS ADD COLUMN IF NOT EXISTS is_member BOOLEAN DEFAULT FALSE;
@@ -70,7 +95,6 @@ class UserDB(DataBaseHandle):
         cur.execute(sql, (user_id,))
         
         if cur.rowcount == 0:
-            # USERS table ရဲ့ မူရင်း schema ကိုမသိသော်လည်း၊ အခြေခံ field များထည့်သွင်း
             insert_sql = "INSERT INTO USERS (user_id, username, is_member, is_banned) VALUES (%s, %s, FALSE, FALSE)"
             cur.execute(insert_sql, (user_id, username))
             LOGGER.info(f"DB: New user {user_id} added.")
@@ -84,18 +108,15 @@ class UserDB(DataBaseHandle):
         # လက်ရှိ သက်တမ်းကုန်ဆုံးရက်ကို ရယူ
         current_expiry_data = self.get_user_status(user_id)
 
+        # ရက်ပေါင်းထည့်မည့် စမှတ်ကို တွက်ချက်
+        new_expiry = datetime.datetime.now() + datetime.timedelta(days=days)
         if current_expiry_data and current_expiry_data['expiry_date']:
             current_expiry = current_expiry_data['expiry_date']
             # သက်တမ်းကုန်ဆုံးရက်က အနာဂတ်မှာရှိနေသေးရင် အဲဒီရက်ကနေစပြီး ရက်ထပ်ပေါင်းမယ်
             if current_expiry > datetime.datetime.now():
                 new_expiry = current_expiry + datetime.timedelta(days=days)
-            else:
-                # သက်တမ်းကုန်နေပြီဆိုရင်တော့ ဒီနေ့ကနေစပြီး ရက်ထပ်ပေါင်းမယ်
-                new_expiry = datetime.datetime.now() + datetime.timedelta(days=days)
-        else:
-            # ပထမဆုံးအကြိမ်ဆိုရင် ဒီနေ့ကနေစပြီး ရက်ပေါင်းမယ်
-            new_expiry = datetime.datetime.now() + datetime.timedelta(days=days)
-
+            # else: သက်တမ်းကုန်နေပြီဆိုရင်တော့ ဒီနေ့ကနေစပြီး ရက်ထပ်ပေါင်းမယ် (အထက်ပါအတိုင်း)
+        
         # DB ထဲ Update လုပ်ခြင်း
         sql = "UPDATE USERS SET is_member=TRUE, is_banned=FALSE, expiry_date=%s WHERE user_id=%s"
         cur.execute(sql, (new_expiry, user_id))
@@ -161,22 +182,12 @@ class UserDB(DataBaseHandle):
         self._conn.commit()
         self.ccur(cur)
         
-# UserDB instance ကို ထည့်သွင်း (set_db အထက်တွင်)
+
 user_db = UserDB()
 
 
 class BotSettings(DataBaseHandle):
-    # ... (မူရင်း BotSettings code များ) ...
 
-# ဤအပိုင်းသည် မူရင်း pg_impl.py code အတိုင်းဖြစ်ပါမည်။
-# BotSettings class ကိုသာ ပြန်ထည့်ပေးပါမည်။
-
-# ------------------------------------
-# မူရင်း pg_impl.py ထဲက BotSettings class ကို ဒီနေရာမှာ ပြန်ထည့်ပေးပါ
-# ------------------------------------
-
-class BotSettings(DataBaseHandle):
-# ... (မူရင်း code) ...
     def __init__(self, dburl=None):
         if dburl is None:
             dburl = Config.DATABASE_URL
@@ -260,6 +271,6 @@ class BotSettings(DataBaseHandle):
 
     def __del__(self):
         super().__del__()
-# ------------------------------------
+
 
 set_db = BotSettings()
