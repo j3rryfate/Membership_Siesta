@@ -1,7 +1,7 @@
 from bot import CMD
 from pyrogram import Client, filters
 from ..helpers.message import send_message, fetch_user_details
-from ..helpers.database.pg_impl import user_db # user_db ကို ထည့်သွင်း
+from ..helpers.database.pg_impl import user_db 
 
 import bot.helpers.translations as lang
 
@@ -11,15 +11,12 @@ async def start(bot, update):
     
     # 1. User DB ထဲ ထည့်သွင်းခြင်း/ရှိမရှိ စစ်ဆေးခြင်း
     status = user_db.get_user_status(user['user_id'])
-    if status:
-        is_new_user = False
-    else:
-        is_new_user = True
+    is_new_user = False if status else True
     
     # ensure_user_exists ကို ခေါ်ပြီး DB ထဲ ထည့်သွင်း
     user_db.ensure_user_exists(
         user['user_id'], 
-        user['user_name'] # username/mention
+        update.from_user.username # DB ထဲမှာ username မှန်ကန်အောင်
     )
     
     # 2. Admin ကို အကြောင်းကြားခြင်း (User အသစ်မှသာ)
